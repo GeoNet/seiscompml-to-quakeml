@@ -4,7 +4,9 @@ This is a project to provide QuakeML web services.  SeisComPML is transformed to
 
 ## Deployment
 
-The application is deployed on AWS Elastic Beanstalk.  To deploy create a zip file containing the resources:
+Edit `.ebextensions/httpd.conf` and change the URL for the S3 bucket containing the SeisComPML.
+
+The application is deployed on AWS Elastic Beanstalk.  To deploy create a zip file containing the resources (or use build.sh):
 
 ```
 zip sc3ml-to-quakeml .ebextensions/* sc3ml_0.6__quakeml_1.2.xsl 
