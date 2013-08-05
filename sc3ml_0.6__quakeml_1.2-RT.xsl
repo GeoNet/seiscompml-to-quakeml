@@ -2,7 +2,7 @@
 <!-- **********************************************************************
  * (C) 2013 - GFZ-Potsdam
  *
- * SC3ML 0.6 to QuakeML 1.2 stylesheet converter
+ * SC3ML 0.6 to QuakeML 1.2 RT stylesheet converter
  * Author: Stephan Herrnkind
  * Email: stephan.herrnkind@gempa.de
  *
@@ -10,11 +10,11 @@
  * Usage
  * ================
  *
- * This stylesheet converts a SC3ML to a QuakeML document. It may be invoked
- * e.g. using xalan or xsltproc:
+ * This stylesheet converts a SC3ML to a QuakeML-RT document. It may be
+ * invoked e.g. using xalan or xsltproc:
  *
- *   xalan -in sc3ml.xml -xsl sc3ml_0.6__quakeml_1.2.xsl -out quakeml.xml
- *   xsltproc -o quakeml.xml sc3ml_0.6__quakeml_1.2.xsl sc3ml.xml
+ *   xalan -in sc3ml.xml -xsl sc3ml_0.6__quakeml_1.2-RT.xsl -out quakeml.xml
+ *   xsltproc -o quakeml.xml sc3ml_0.6__quakeml_1.2-RT.xsl sc3ml.xml
  *
  * ================
  * Transformation
@@ -28,22 +28,27 @@
  *    restrictions, a conversion of a SC3ML to a QuakeML ID must be performed:
  *    'sc3id' -> 'smi:scs/0.6/sc3id'. If no SC3ML ID is available but QuakeML
  *    enforces one, a static ID value of 'NA' is used.
- *  - Repositioning of nodes: In QuakeML all information is grouped under the
- *    event element. As a consequence every node not referenced by an event
- *    will be lost during the conversion.
+ *  - Position of 'magnitude' and 'stationMagnitude' nodes : Whereas SC3ML
+ *    places these nodes under the 'origin' element, QuakeML-RT expects them on
+ *    the same level as the 'origin' element. When moving these nodes the
+ *    publicID of the parent 'origin' is copied to the 'originID' child node of
+ *    the magnitude nodes (except an originID was specified in the SC3ML
+ *    sources nodes).
  *
  *    <EventParameters>               <eventParameters>
- *                                        <event>
- *        <pick/>                             <pick/>
- *        <amplitude/>                        <amplitude/>
- *        <reading/>
- *        <origin>                            <origin/>
- *            <stationMagnitude/>             <stationMagnitude/>
- *            <magnitude/>                    <magnitude/>
- *        </origin>
- *        <focalMechanism/>                   <focalMechanism/>
- *        <event/>                        </event>
+ *      <origin publicID="foo">         <origin publicID="smi:scs/0.6/foo"/>
+ *        <stationMagnitude/>           <stationMagnitude>
+ *                                          <originID>smi:scs/0.6/foo</originID>
+ *                                      </stationMagnitude>
+ *        <magnitude>                   <magnitude>
+ *          <originID>bar</originID>      <originID>smi:scs/0.6/bar</originID>
+ *        </magnitude>                  </magnitude>
  *    </EventParameters>              </eventParameters>
+ *
+ *  - An 'event' in SC3ML and QuakeML-RT refers to its origins via
+ *    'originReference' elements. Since in SC3ML 'magnitude' elements are
+ *    children of a 'origin' a connection of events and origins can be made.
+ *    For the same mapping QuakeML-RT uses 'magnitudeReference' elements.
  *
  *  - Renaming of nodes: The following table lists the mapping of names between
  *    both schema:
@@ -81,7 +86,6 @@
  *                    cmtName
  *                    cmtVersion
  *                    phaseSetting
- *    eventParameters reading
  *
  *  - Restriction of data size: QuakeML restricts string length of some
  *    elements. This length restriction is _NOT_ enforced by this
@@ -112,8 +116,8 @@
         xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
         xmlns:scs="http://geofon.gfz-potsdam.de/ns/seiscomp3-schema/0.6"
         xmlns:qml="http://quakeml.org/xmlns/quakeml/1.0"
-        xmlns="http://quakeml.org/xmlns/bed/1.2"
-        xmlns:q="http://quakeml.org/xmlns/quakeml/1.2"
+        xmlns="http://quakeml.org/xmlns/bed-rt/1.2"
+        xmlns:q="http://quakeml.org/xmlns/quakeml-rt/1.2"
         exclude-result-prefixes="scs qml xsl">
     <xsl:output method="xml" encoding="UTF-8" indent="yes"/>
     <xsl:strip-space elements="*"/>
@@ -135,56 +139,21 @@
                             <xsl:with-param name="id" select="@publicID"/>
                         </xsl:call-template>
                     </xsl:attribute>
+                    <!-- Move all origin/stationMagnitudes and origin/magitudes
+                         to this level -->
+                    <xsl:for-each select="scs:origin">
+                        <xsl:for-each select="scs:stationMagnitude">
+                            <xsl:call-template name="genericNode"/>
+                        </xsl:for-each>
+                        <xsl:for-each select="scs:magnitude">
+                            <xsl:call-template name="genericNode"/>
+                        </xsl:for-each>
+                    </xsl:for-each>
 
                     <xsl:apply-templates/>
                 </eventParameters>
             </xsl:for-each>
         </q:quakeml>
-    </xsl:template>
-
-    <!-- event -->
-    <xsl:template match="scs:event">
-        <xsl:element name="{local-name()}">
-            <xsl:apply-templates select="@*"/>
-
-            <!-- search origins referenced by this event -->
-            <xsl:for-each select="scs:originReference">
-                <xsl:for-each select="../../scs:origin[@publicID=current()]">
-                    <!-- stationMagnitudes and referenced amplitudes -->
-                    <xsl:for-each select="scs:stationMagnitude">
-                        <xsl:for-each select="../../scs:amplitude[@publicID=current()/scs:amplitudeID]">
-                            <xsl:call-template name="genericNode"/>
-                        </xsl:for-each>
-                        <xsl:call-template name="genericNode"/>
-                    </xsl:for-each>
-
-                    <!-- magnitudes -->
-                    <xsl:for-each select="scs:magnitude">
-                        <xsl:call-template name="genericNode"/>
-                    </xsl:for-each>
-
-                    <!-- picks, referenced by arrivals -->
-                    <xsl:for-each select="scs:arrival">
-                        <!--xsl:value-of select="scs:pickID"/-->
-                        <xsl:for-each select="../../scs:pick[@publicID=current()/scs:pickID]">
-                            <xsl:call-template name="genericNode"/>
-                        </xsl:for-each>
-                    </xsl:for-each>
-
-                    <!-- origin -->
-                    <xsl:call-template name="genericNode"/>
-                </xsl:for-each>
-            </xsl:for-each>
-
-            <!-- search focalMechanisms referenced by this event -->
-            <xsl:for-each select="scs:focalMechanismReference">
-                <xsl:for-each select="../../scs:focalMechanism[@publicID=current()]">
-                    <xsl:call-template name="genericNode"/>
-                </xsl:for-each>
-            </xsl:for-each>
-
-            <xsl:apply-templates/>
-        </xsl:element>
     </xsl:template>
 
     <!-- Default match: Map node 1:1 -->
@@ -193,13 +162,6 @@
     </xsl:template>
 
     <!-- Delete elements -->
-    <xsl:template match="scs:EventParameters/scs:pick"/>
-    <xsl:template match="scs:EventParameters/scs:amplitude"/>
-    <xsl:template match="scs:EventParameters/scs:reading"/>
-    <xsl:template match="scs:EventParameters/scs:origin"/>
-    <xsl:template match="scs:EventParameters/scs:focalMechanism"/>
-    <xsl:template match="scs:event/scs:originReference|scs:focalMechanismReference"/>
-    <xsl:template match="scs:event/scs:focalMechanismReference"/>
     <xsl:template match="scs:creationInfo/scs:modificationTime"/>
     <xsl:template match="scs:comment/scs:id"/>
     <xsl:template match="scs:arrival/scs:timeUsed"/>
@@ -215,6 +177,27 @@
     <xsl:template match="scs:momentTensor/scs:cmtName"/>
     <xsl:template match="scs:momentTensor/scs:cmtVersion"/>
     <xsl:template match="scs:momentTensor/scs:phaseSetting"/>
+
+
+    <!-- event -->
+    <xsl:template match="scs:event">
+        <xsl:element name="{local-name()}">
+            <xsl:apply-templates select="@*"/>
+            <xsl:apply-templates/>
+
+            <!-- Create network magnitude references referenced by origins of
+                 this event -->
+            <xsl:for-each select="scs:originReference">
+                <xsl:for-each select="../../scs:origin[@publicID=current()]/scs:magnitude/@publicID">
+                    <xsl:element name="magnitudeReference">
+                        <xsl:call-template name="convertID">
+                            <xsl:with-param name="id" select="string(.)"/>
+                        </xsl:call-template>
+                    </xsl:element>
+                </xsl:for-each>
+            </xsl:for-each>
+        </xsl:element>
+    </xsl:template>
 
     <!-- event type, enumeration differs slightly -->
     <xsl:template match="scs:event/scs:type">
