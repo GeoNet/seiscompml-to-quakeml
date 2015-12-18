@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- **********************************************************************
- * (C) 2013 - GFZ-Potsdam
+ * (C) 2014 - GFZ-Potsdam
  *
  * SC3ML 0.7 to QuakeML 1.2 RT stylesheet converter
- * Author: Stephan Herrnkind
- * Email: stephan.herrnkind@gempa.de
+ * Author  : Stephan Herrnkind
+ * Email   : stephan.herrnkind@gempa.de
+ * Version : 2014.251.01
  *
  * ================
  * Usage
@@ -94,6 +95,19 @@
  *    restrictions.
  *
  * ================
+ * Change log
+ * ===============
+ *
+ *  * 08.09.2014: Fixed typo in event type conversion (meteo[r] impact)
+ *
+ *  * 25.08.2014: Applied part of the patch proposed by Philipp Kaestli on
+ *                seiscomp-l@gfz-potsdam.de
+ *    - used public id of parent origin if origin id propertery of magnitude
+ *      and station magnitudes is unset
+ *    - fixed takeOffAngle conversion vom real (SC3ML) to RealQuantity
+ *      (QuakeML)
+ *
+ * ================
  * Licence
  * ================
  *
@@ -123,7 +137,9 @@
     <xsl:strip-space elements="*"/>
 
     <!-- Define some global variables -->
-    <xsl:variable name="ID_PREFIX" select="'smi:scs/0.7/'"/>
+    <!-- CHANGE ME: Please change the ID_PREFIX to the reverse DNS name of your
+         institute -->
+    <xsl:variable name="ID_PREFIX" select="'smi:org.gfz-potsdam.de/geofon/'"/>
     <xsl:variable name="PID" select="'publicID'"/>
 
     <!-- Starting point: Match the root node and select the one and only
@@ -143,10 +159,14 @@
                          to this level -->
                     <xsl:for-each select="scs:origin">
                         <xsl:for-each select="scs:stationMagnitude">
-                            <xsl:call-template name="genericNode"/>
+                            <xsl:apply-templates select="." mode="originMagnitude">
+                                <xsl:with-param name="oID" select="../@publicID"/>
+                            </xsl:apply-templates>
                         </xsl:for-each>
                         <xsl:for-each select="scs:magnitude">
-                            <xsl:call-template name="genericNode"/>
+                            <xsl:apply-templates select="." mode="originMagnitude">
+                                <xsl:with-param name="oID" select="../@publicID"/>
+                            </xsl:apply-templates>
                         </xsl:for-each>
                     </xsl:for-each>
 
@@ -199,13 +219,32 @@
         </xsl:element>
     </xsl:template>
 
+    <!-- Converts a scs magnitude/stationMagnitude to a qml
+         magnitude/stationMagnitude -->
+    <xsl:template match="*" mode="originMagnitude">
+        <xsl:param name="oID"/>
+        <xsl:element name="{local-name()}">
+            <xsl:apply-templates select="@*"/>
+            <!-- if no originID element is available, create one with
+                 the value of the publicID attribute of parent origin -->
+            <xsl:if test="not(scs:originID)">
+                <originID>
+                    <xsl:call-template name="convertID">
+                        <xsl:with-param name="id" select="$oID"/>
+                    </xsl:call-template>
+                </originID>
+            </xsl:if>
+            <xsl:apply-templates/>
+        </xsl:element>
+    </xsl:template>
+
     <!-- event type, enumeration differs slightly -->
     <xsl:template match="scs:event/scs:type">
         <xsl:element name="{local-name()}">
             <xsl:variable name="v" select="current()"/>
             <xsl:choose>
                 <xsl:when test="$v='induced earthquake'">induced or triggered event</xsl:when>
-                <xsl:when test="$v='meteo impact'">meteorite</xsl:when>
+                <xsl:when test="$v='meteor impact'">meteorite</xsl:when>
                 <xsl:when test="$v='not locatable'">other</xsl:when>
                 <xsl:when test="$v='outside of network interest'">other</xsl:when>
                 <xsl:when test="$v='duplicate'">other</xsl:when>
@@ -255,12 +294,12 @@
         </xsl:if>
     </xsl:template>
 
-    <!-- arrival -> arrival + publicID + comment node -->
+    <!-- origin arrival, since SC3ML does not include a publicID it is generated from pick and origin id -->
     <xsl:template match="scs:arrival">
         <xsl:element name="{local-name()}">
             <xsl:attribute name="{$PID}">
-                <xsl:call-template name="convertOptionalID">
-                    <xsl:with-param name="id" select="@publicID"/>
+                <xsl:call-template name="convertID">
+                    <xsl:with-param name="id" select="concat(scs:pickID, '#', ../@publicID)"/>
                 </xsl:call-template>
             </xsl:attribute>
             <!--comment/-->
@@ -285,9 +324,11 @@
 
     <!-- arrival/takeOffAngle -> arrival/takeoffAngle -->
     <xsl:template match="scs:arrival/scs:takeOffAngle">
-        <xsl:call-template name="genericNode">
-            <xsl:with-param name="name" select="'takeoffAngle'"/>
-        </xsl:call-template>
+        <xsl:element name="takeoffAngle">
+            <xsl:element name="value">
+                <xsl:value-of select="."/>
+            </xsl:element>
+        </xsl:element>
     </xsl:template>
 
     <!-- stationMagnitude/magnitude -> stationMagnitude/mag -->
